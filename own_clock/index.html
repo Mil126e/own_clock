@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark" id="colorSchemeMeta">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <title>计时</title>
+  <style>
+    :root {
+      --bg: #f2f2f7;
+      --card: #ffffff;
+      --ink: #000000;
+      --label: #8e8e93;
+      --separator: rgba(60, 60, 67, 0.12);
+      --tint: #007aff;
+      --set: rgb(200, 151, 148);
+      --progress: rgb(124, 126, 87);
+      --track: #e5e5ea;
+      --dial-face: #ffffff;
+      --dial-shadow: rgba(0, 0, 0, 0.06);
+      --dial-stroke: rgba(0, 0, 0, 0.04);
+      --dial-label: #2c2c2e;
+      --dial-tick: #6c6c70;
+      --dial-cap: #6c6c70;
+      --dial-hub: #d1d1d6;
+      --dial-hub-ring: #c7c7cc;
+      --hand-halo: #ffffff;
+      --glass: rgba(255, 255, 255, 0.78);
+      --chip-bg: rgba(118, 118, 128, 0.12);
+      --hover-ui: rgba(118, 118, 128, 0.18);
+      --radius: 14px;
+      --sf: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "PingFang SC", "Helvetica Neue", sans-serif;
+    }
+
+    html[data-theme="dark"] {
+      color-scheme: dark;
+      --bg: #000000;
+      --card: #1c1c1e;
+      --ink: #ffffff;
+      --label: #8e8e93;
+      --separator: rgba(84, 84, 88, 0.65);
+      --track: #3a3a3c;
+      --dial-face: #1c1c1e;
+      --dial-shadow: rgba(0, 0, 0, 0.45);
+      --dial-stroke: rgba(255, 255, 255, 0.08);
+      --dial-label: #f2f2f7;
+      --dial-tick: #aeaeb2;
+      --dial-cap: #aeaeb2;
+      --dial-hub: #48484a;
+      --dial-hub-ring: #636366;
+      --hand-halo: #1c1c1e;
+      --glass: rgba(28, 28, 30, 0.82);
+      --chip-bg: rgba(118, 118, 128, 0.24);
+      --hover-ui: rgba(255, 255, 255, 0.1);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      color: var(--ink);
+      background: var(--bg);
+      font-family: var(--sf);
+      font-size: 17px;
+      line-height: 1.35;
+      -webkit-font-smoothing: antialiased;
+      -webkit-tap-highlight-color: transparent;
+      user-select: none;
+    }
+
+    body.dragging, body.dragging * { cursor: grabbing !important; }
+
+    main {
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: max(20px, env(safe-area-inset-top)) 20px max(28px, env(safe-area-inset-bottom));
+      transition: gap 0.35s ease, padding 0.35s ease;
+    }
+
+    body.focus-mode main {
+      gap: 0;
+      padding-top: max(52px, calc(env(safe-area-inset-top) + 12px));
+    }
+
+    body.focus-mode:not(.show-all) .panel {
+      display: none !important;
+    }
+
+    body.focus-mode .stage {
+      width: min(92vmin, 520px);
+    }
+
+    .top-bar {
+      position: fixed;
+      top: max(10px, env(safe-area-inset-top));
+      right: max(14px, env(safe-area-inset-right));
+      z-index: 45;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .expand-ui,
+    .settings-btn {
+      font: 600 15px/1 var(--sf);
+      color: var(--tint);
+      background: var(--glass);
+      backdrop-filter: saturate(180%) blur(20px);
+      -webkit-backdrop-filter: saturate(180%) blur(20px);
+      border: none;
+      border-radius: 999px;
+      box-shadow: 0 1px 4px rgba(0, 0, 0, 0.08);
+      cursor: pointer;
+    }
+
+    .expand-ui {
+      padding: 8px 14px;
+    }
+
+    .expand-ui[hidden] { display: none; }
+
+    .expand-ui:active,
+    .settings-btn:active { opacity: 0.65; }
+
+    @media (hover: hover) {
+      .expand-ui:hover {
+        background: color-mix(in srgb, var(--hover-ui) 55%, var(--glass));
+      }
+
+      .settings-btn:hover {
+        background: color-mix(in srgb, var(--hover-ui) 50%, var(--glass));
+      }
+    }
+
+    .settings-btn {
+      display: grid;
+      place-items: center;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      color: var(--label);
+    }
+
+    .settings-btn img {
+      display: block;
+      width: 22px;
+      height: 22px;
+      pointer-events: none;
+    }
+
+    html[data-theme="dark"] .settings-btn img {
+      filter: invert(1) brightness(1.05);
+    }
+
+    .settings-overlay[hidden] {
+      display: none !important;
+    }
+
+    .settings-overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 0 12px max(12px, env(safe-area-inset-bottom));
+      background: rgba(0, 0, 0, 0.35);
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.28s ease;
+    }
+
+    .settings-overlay.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .settings-sheet {
+      width: min(420px, 100%);
+      padding: 18px 16px 20px;
+      background: var(--card);
+      border-radius: 16px;
+      box-shadow: 0 12px 40px rgba(0, 0, 0, 0.22);
+      transform: translateY(16px);
+      transition: transform 0.28s ease;
+    }
+
+    .settings-overlay.open .settings-sheet {
+      transform: translateY(0);
+    }
+
+  @media (min-width: 680px) {
+      .settings-overlay {
+        align-items: flex-start;
+        justify-content: flex-end;
+        padding: max(56px, calc(env(safe-area-inset-top) + 44px)) 16px 16px;
+        background: transparent;
+        pointer-events: none;
+      }
+
+      .settings-overlay.open { pointer-events: auto; }
+
+      .settings-overlay.open::before {
+        content: "";
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.2);
+        pointer-events: auto;
+      }
+
+      .settings-sheet {
+        position: relative;
+        z-index: 1;
+        pointer-events: auto;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.18);
+      }
+    }
+
+    .settings-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+
+    .settings-head h2 {
+      margin: 0;
+      font-size: 20px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+    }
+
+    .settings-close {
+      width: 32px;
+      height: 32px;
+      padding: 0;
+      border: none;
+      border-radius: 50%;
+      font-size: 22px;
+      line-height: 1;
+      color: var(--label);
+      background: var(--chip-bg);
+      cursor: pointer;
+    }
+
+    .settings-block + .settings-block {
+      margin-top: 16px;
+      padding-top: 16px;
+      border-top: 1px solid var(--separator);
+    }
+
+    .settings-label {
+      margin: 0 0 8px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--label);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+
+    .seg {
+      display: flex;
+      gap: 4px;
+      padding: 4px;
+      background: var(--chip-bg);
+      border-radius: 10px;
+    }
+
+    .seg button {
+      flex: 1;
+      padding: 8px 10px;
+      font-size: 15px;
+      font-weight: 600;
+      color: var(--ink);
+      border-radius: 7px;
+    }
+
+    .seg button {
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .seg button.on {
+      background: var(--card);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    html[data-theme="dark"] .seg button.on {
+      background: #3a3a3c;
+    }
+
+    @media (hover: hover) {
+      .seg button:hover:not(.on) {
+        background: var(--hover-ui);
+      }
+    }
+
+    .palette-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+    }
+
+    .palette-opt {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 10px 12px;
+      text-align: left;
+      background: transparent;
+      border: 1.5px solid var(--separator);
+      border-radius: 12px;
+      cursor: pointer;
+    }
+
+    .palette-opt {
+      transition: background 0.15s ease, border-color 0.15s ease;
+    }
+
+    .palette-opt.on {
+      border-color: var(--tint);
+      background: color-mix(in srgb, var(--tint) 10%, transparent);
+    }
+
+    @media (hover: hover) {
+      .palette-opt:hover:not(.on) {
+        background: var(--hover-ui);
+      }
+    }
+
+    .palette-opt span {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--label);
+    }
+
+    .palette-duo {
+      display: flex;
+      flex-shrink: 0;
+    }
+
+    .palette-duo i {
+      width: 18px;
+      height: 28px;
+      border-radius: 6px 0 0 6px;
+      display: block;
+    }
+
+    .palette-duo i + i {
+      border-radius: 0 6px 6px 0;
+    }
+
+  .dial-line {
+      margin: 0;
+      color: var(--label);
+      font-size: 15px;
+    }
+
+    .chips {
+      display: inline-flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 4px;
+      padding: 4px;
+      background: var(--chip-bg);
+      border-radius: 10px;
+    }
+
+    button, .custom {
+      font: inherit;
+      color: var(--ink);
+      background: transparent;
+      border: none;
+      border-radius: 8px;
+    }
+
+    button {
+      padding: 10px 16px;
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    button:focus-visible, input:focus-visible {
+      outline: 2px solid var(--tint);
+      outline-offset: 2px;
+    }
+
+    .chip {
+      padding: 7px 12px;
+      font-size: 15px;
+      font-weight: 500;
+      color: var(--ink);
+      border-radius: 7px;
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .chip.on, #preview.on {
+      background: var(--card);
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.12);
+    }
+
+    .custom {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 10px;
+      font-size: 15px;
+      color: var(--label);
+      border-radius: 7px;
+      transition: background 0.15s ease;
+    }
+
+    .custom input {
+      width: 52px;
+      border: none;
+      background: var(--card);
+      color: var(--ink);
+      font: 600 15px var(--sf);
+      text-align: center;
+      border-radius: 6px;
+      padding: 4px 6px;
+    }
+
+    .panel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 14px;
+      width: min(420px, 100%);
+    }
+
+    .stage {
+      position: relative;
+      width: min(380px, 88vw);
+      transition: width 0.35s ease;
+    }
+
+    @media (min-width: 900px) {
+      main {
+        flex-direction: row;
+        align-items: center;
+        gap: 48px;
+        padding: 32px 48px;
+      }
+
+      body.focus-mode:not(.show-all) main {
+        flex-direction: column;
+        justify-content: center;
+      }
+
+      .stage { width: min(440px, 42vw); }
+      body.focus-mode .stage { width: min(520px, min(92vmin, 56vh)); }
+
+      .panel {
+        align-items: flex-start;
+        width: min(400px, 40vw);
+      }
+
+      .panel .dial-line,
+      .panel #status,
+      .panel .hint { text-align: left; }
+
+      .panel .chips,
+      .panel .readout,
+      .panel .controls,
+      .panel .legend { justify-content: flex-start; }
+    }
+
+    #clock {
+      width: 100%;
+      height: auto;
+      display: block;
+      touch-action: none;
+      cursor: grab;
+      filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.08));
+    }
+
+    .stage.done #clock {
+      filter:
+        drop-shadow(0 8px 24px rgba(0, 0, 0, 0.08))
+        drop-shadow(0 0 20px color-mix(in srgb, var(--progress) 55%, transparent));
+    }
+
+    .stage.is-running #clock { cursor: default; }
+
+    #dialShadow { fill: var(--dial-shadow); }
+    #dialFace { fill: var(--dial-face); stroke: var(--dial-stroke); }
+    #trackRing { fill: none; stroke: var(--track); stroke-width: 2; opacity: 0.45; }
+    #capMark { fill: var(--dial-cap); }
+    #setFull, #setArc { fill: var(--set); stroke: none; }
+    #progressFull, #progressArc { fill: var(--progress); stroke: none; }
+    #setHand .set-stroke { stroke: var(--set); }
+    #setHand .set-knob { fill: var(--set); stroke: var(--hand-halo); }
+    #progressHand .prog-halo { stroke: var(--hand-halo); }
+    #progressHand .prog-stroke { stroke: var(--progress); }
+    #hub { fill: var(--dial-hub); }
+    #hubPin { fill: var(--dial-face); stroke: var(--dial-hub-ring); }
+
+    #confetti {
+      position: fixed;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      z-index: 20;
+    }
+
+    .readout {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+    }
+
+    .readout div {
+      flex: 1 1 100px;
+      min-width: 0;
+      padding: 12px 14px;
+      text-align: center;
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      transition: background 0.15s ease, box-shadow 0.15s ease;
+    }
+
+    .readout span {
+      color: var(--label);
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .readout strong {
+      display: block;
+      margin-top: 4px;
+      font-size: 28px;
+      font-weight: 600;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: -0.02em;
+    }
+
+    .readout .remain.done strong { color: var(--progress); }
+
+    #status {
+      min-height: 1.35em;
+      margin: 0;
+      color: var(--label);
+      font-size: 15px;
+      text-align: center;
+    }
+
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+    }
+
+    .controls button {
+      flex: 1 1 auto;
+      min-width: 72px;
+      font-size: 17px;
+      font-weight: 600;
+      color: var(--tint);
+      background: var(--card);
+      border-radius: var(--radius);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      transition: background 0.15s ease, filter 0.15s ease, opacity 0.15s ease;
+    }
+
+    #start {
+      flex: 1 1 100%;
+      padding: 14px 20px;
+      color: #fff;
+      background: var(--tint);
+      box-shadow: none;
+    }
+
+    #start:active:not(:disabled) { opacity: 0.85; }
+
+    @media (hover: hover) {
+      .panel .chip:hover:not(:disabled):not(.on) {
+        background: var(--hover-ui);
+      }
+
+      .panel .custom:hover {
+        background: var(--hover-ui);
+      }
+
+      .panel .readout div:hover {
+        background: color-mix(in srgb, var(--hover-ui) 35%, var(--card));
+      }
+
+      .controls button:hover:not(:disabled):not(#start) {
+        background: color-mix(in srgb, var(--hover-ui) 40%, var(--card));
+      }
+
+      #start:hover:not(:disabled) {
+        filter: brightness(1.06);
+      }
+
+      #preview:hover:not(:disabled):not(.on) {
+        background: color-mix(in srgb, var(--hover-ui) 40%, var(--card));
+      }
+
+      .settings-close:hover {
+        background: color-mix(in srgb, var(--hover-ui) 55%, var(--chip-bg));
+      }
+    }
+
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      margin: 0;
+      padding: 0;
+      list-style: none;
+      color: var(--label);
+      font-size: 13px;
+    }
+
+    .legend li { display: flex; align-items: center; gap: 6px; }
+
+    .swatch {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    .swatch.dial { background: var(--track); }
+    .swatch.set { background: var(--set); }
+    .swatch.done { background: var(--progress); }
+
+    .hint {
+      max-width: 100%;
+      margin: 0;
+      color: var(--label);
+      font-size: 13px;
+      line-height: 1.55;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="confetti"></canvas>
+  <div class="top-bar" aria-label="顶栏">
+    <button type="button" id="expandUi" class="expand-ui" hidden>全显示</button>
+    <button type="button" id="settingsBtn" class="settings-btn" aria-label="设置" aria-haspopup="dialog" aria-expanded="false">
+      <img src="assets/icon/settings.svg" width="22" height="22" alt="">
+    </button>
+  </div>
+  <div id="settingsOverlay" class="settings-overlay" hidden>
+    <section class="settings-sheet" role="dialog" aria-labelledby="settingsTitle" aria-modal="true">
+      <div class="settings-head">
+        <h2 id="settingsTitle">设置</h2>
+        <button type="button" class="settings-close" id="settingsClose" aria-label="关闭">×</button>
+      </div>
+      <div class="settings-block">
+        <p class="settings-label">Theme · 主题</p>
+        <div class="seg" role="group" aria-label="主题">
+          <button type="button" class="theme-opt on" data-theme="light">Light</button>
+          <button type="button" class="theme-opt" data-theme="dark">Dark</button>
+        </div>
+      </div>
+      <div class="settings-block">
+        <p class="settings-label">Color · 色系</p>
+        <div class="palette-grid" id="paletteGrid" role="radiogroup" aria-label="表盘色系"></div>
+      </div>
+    </section>
+  </div>
+  <main>
+    <div class="stage" id="stage">
+      <svg id="clock" viewBox="0 0 640 640" role="img" aria-label="表盘计时">
+        <circle id="dialShadow" cx="320" cy="322" r="278"></circle>
+        <circle id="dialFace" cx="320" cy="320" r="276" stroke-width="1"></circle>
+        <circle id="setFull" cx="320" cy="320" r="227" display="none"></circle>
+        <path id="setArc"></path>
+        <circle id="progressFull" cx="320" cy="320" r="227" display="none"></circle>
+        <path id="progressArc"></path>
+        <circle id="trackRing" cx="320" cy="320" r="248"></circle>
+        <g id="ticks"></g>
+        <polygon id="capMark" points="320,32 313,50 327,50"></polygon>
+        <g id="setHand">
+          <line x1="320" y1="320" x2="320" y2="110" stroke="transparent" stroke-width="40"></line>
+          <line class="set-stroke" x1="320" y1="320" x2="320" y2="124" stroke-width="4.5" stroke-linecap="round"></line>
+          <circle class="set-knob" cx="320" cy="110" r="14" stroke-width="3"></circle>
+        </g>
+        <g id="progressHand">
+          <line class="prog-halo" x1="320" y1="320" x2="320" y2="136" stroke-width="7" stroke-linecap="round"></line>
+          <line class="prog-stroke" x1="320" y1="320" x2="320" y2="136" stroke-width="3.5" stroke-linecap="round"></line>
+        </g>
+        <circle id="hub" cx="320" cy="320" r="10"></circle>
+        <circle id="hubPin" cx="320" cy="320" r="5" stroke-width="1"></circle>
+      </svg>
+    </div>
+
+    <section class="panel" id="panel">
+    <p class="dial-line" id="dialNow">这一圈是 2 小时</p>
+    <div class="chips" role="group" aria-label="表盘一周的时长">
+      <button type="button" class="chip" data-hours="2" aria-pressed="true">2 小时</button>
+      <button type="button" class="chip" data-hours="3" aria-pressed="false">3 小时</button>
+      <button type="button" class="chip" data-hours="4" aria-pressed="false">4 小时</button>
+      <label class="custom">自定义
+        <input id="hoursInput" type="number" min="0.5" max="24" step="0.5" value="2" aria-label="自定义小时数">
+        小时
+      </label>
+    </div>
+
+    <div class="readout">
+      <div>
+        <span>拨定</span>
+        <strong id="setTime">01:00:00</strong>
+      </div>
+      <div>
+        <span>已走</span>
+        <strong id="elapsedTime">00:00:00</strong>
+      </div>
+      <div class="remain" id="remainBox">
+        <span>剩余</span>
+        <strong id="remainTime">01:00:00</strong>
+      </div>
+    </div>
+
+    <p id="status" aria-live="polite"></p>
+
+    <div class="controls">
+      <button type="button" id="start">开始</button>
+      <button type="button" id="pause" disabled>暂停</button>
+      <button type="button" id="reset" title="覆盖色指针回到起点">重置</button>
+      <button type="button" id="preview">10 秒预览</button>
+    </div>
+
+    <ul class="legend">
+      <li><i class="swatch dial"></i>表盘</li>
+      <li><i class="swatch set"></i>拨定</li>
+      <li><i class="swatch done"></i>已走</li>
+    </ul>
+
+    <p class="hint">拖动拨针圆点或圆环设时。右上角齿轮可调主题与色系；开始后可用「全显示」展开控件。空格开始/暂停，方向键微调。</p>
+    </section>
+  </main>
+  <noscript>请用浏览器打开这个文件。</noscript>
+  <script>
+    'use strict';
+
+    const CX = 320;
+    const CY = 320;
+    const DIAL_FACE_R = 276;
+    const SECTOR_R = 227;
+    const TICK_MAJOR_INNER = 225;
+    const TICK_MAJOR_OUTER = 238;
+    const TICK_MINOR_INNER = 226;
+    const TICK_MINOR_OUTER = 236;
+    const PREVIEW_MS = 10000;
+    const MIN_SET_MS = 1000;
+
+    const svg = document.getElementById('clock');
+    const stage = document.getElementById('stage');
+    const ticks = document.getElementById('ticks');
+    const setArc = document.getElementById('setArc');
+    const setFull = document.getElementById('setFull');
+    const progressArc = document.getElementById('progressArc');
+    const progressFull = document.getElementById('progressFull');
+    const setHand = document.getElementById('setHand');
+    const progressHand = document.getElementById('progressHand');
+    const hoursInput = document.getElementById('hoursInput');
+    const chips = [...document.querySelectorAll('.chip')];
+    const dialNow = document.getElementById('dialNow');
+    const setTime = document.getElementById('setTime');
+    const elapsedTime = document.getElementById('elapsedTime');
+    const remainTime = document.getElementById('remainTime');
+    const remainBox = document.getElementById('remainBox');
+    const statusEl = document.getElementById('status');
+    const startBtn = document.getElementById('start');
+    const pauseBtn = document.getElementById('pause');
+    const resetBtn = document.getElementById('reset');
+    const previewBtn = document.getElementById('preview');
+    const expandBtn = document.getElementById('expandUi');
+    const settingsBtn = document.getElementById('settingsBtn');
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    const settingsClose = document.getElementById('settingsClose');
+    const paletteGrid = document.getElementById('paletteGrid');
+    const themeOpts = [...document.querySelectorAll('.theme-opt')];
+    const colorSchemeMeta = document.getElementById('colorSchemeMeta');
+    const canvas = document.getElementById('confetti');
+    const ctx = canvas.getContext('2d');
+
+    const PALETTES = [
+      { set: [200, 151, 148], progress: [124, 126, 87] },
+      { set: [176, 163, 156], progress: [127, 144, 152] },
+      { set: [160, 160, 160], progress: [94, 78, 102] },
+      { set: [174, 151, 132], progress: [166, 95, 93] },
+    ];
+    const STORAGE_KEY = 'own-clock-prefs';
+
+    function rgbCss(rgb) {
+      return `rgb(${rgb[0]}, ${rgb[1]}, ${rgb[2]})`;
+    }
+
+    let uiTheme = 'light';
+    let paletteIndex = 0;
+    let settingsOpen = false;
+
+    let dialHours = 2;
+    let setAngle = 180;
+    let elapsedBefore = 0;
+    let runStartedAt = 0;
+    let speed = 1;
+    let running = false;
+    let previewing = false;
+    let finished = false;
+    let dragging = false;
+    let dragAngle = 180;
+    let endTimer = 0;
+    let sprayToken = 0;
+    let builtHours = null;
+    let showAllUi = false;
+    let focusByStart = false;
+
+    function polar(r, deg) {
+      const rad = (deg - 90) * Math.PI / 180;
+      return [CX + r * Math.cos(rad), CY + r * Math.sin(rad)];
+    }
+
+    function sectorPath(r, end) {
+      const [x1, y1] = polar(r, 0);
+      const [x2, y2] = polar(r, end);
+      const large = end > 180 ? 1 : 0;
+      return `M ${CX} ${CY} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`;
+    }
+
+    function targetMs() {
+      return (setAngle / 360) * dialHours * 3600000;
+    }
+
+    function currentElapsed() {
+      if (!running) return elapsedBefore;
+      return elapsedBefore + (Date.now() - runStartedAt) * speed;
+    }
+
+    function formatHMS(ms) {
+      const total = Math.max(0, Math.round(ms / 1000));
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      return [h, m, s].map((n) => String(n).padStart(2, '0')).join(':');
+    }
+
+    function formatLoose(ms) {
+      const totalMin = Math.round(ms / 60000);
+      const h = Math.floor(totalMin / 60);
+      const m = totalMin % 60;
+      if (h && m) return `${h} 小时 ${m} 分`;
+      if (h) return `${h} 小时`;
+      if (totalMin > 0) return `${totalMin} 分钟`;
+      return `${Math.max(1, Math.round(ms / 1000))} 秒`;
+    }
+
+    function formatHours(hours) {
+      const rounded = Math.round(hours * 10) / 10;
+      return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1);
+    }
+
+    function dialTickStroke() {
+      return getComputedStyle(document.documentElement).getPropertyValue('--dial-tick').trim() || '#c7c7cc';
+    }
+
+    function applyAppearance() {
+      const palette = PALETTES[paletteIndex];
+      const root = document.documentElement;
+      root.dataset.theme = uiTheme;
+      root.style.setProperty('--set', rgbCss(palette.set));
+      root.style.setProperty('--progress', rgbCss(palette.progress));
+      if (colorSchemeMeta) colorSchemeMeta.setAttribute('content', uiTheme === 'dark' ? 'dark' : 'light');
+
+      themeOpts.forEach((btn) => {
+        const on = btn.dataset.theme === uiTheme;
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+      });
+
+      paletteGrid.querySelectorAll('.palette-opt').forEach((btn) => {
+        const on = Number(btn.dataset.palette) === paletteIndex;
+        btn.classList.toggle('on', on);
+        btn.setAttribute('aria-checked', on ? 'true' : 'false');
+      });
+
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ uiTheme, paletteIndex }));
+      } catch (err) { /* private mode */ }
+    }
+
+    function buildPaletteOptions() {
+      paletteGrid.replaceChildren();
+      PALETTES.forEach((palette, index) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'palette-opt';
+        btn.dataset.palette = String(index);
+        btn.setAttribute('role', 'radio');
+        btn.innerHTML = `
+          <span class="palette-duo" aria-hidden="true">
+            <i style="background:${rgbCss(palette.set)}"></i>
+            <i style="background:${rgbCss(palette.progress)}"></i>
+          </span>
+          <span>色系 ${index + 1}</span>`;
+        btn.addEventListener('click', () => {
+          paletteIndex = index;
+          applyAppearance();
+        });
+        paletteGrid.appendChild(btn);
+      });
+    }
+
+    function loadAppearancePrefs() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const saved = JSON.parse(raw);
+        if (saved.uiTheme === 'light' || saved.uiTheme === 'dark') uiTheme = saved.uiTheme;
+        const idx = Number(saved.paletteIndex);
+        if (idx >= 0 && idx < PALETTES.length) paletteIndex = idx;
+      } catch (err) { /* ignore */ }
+    }
+
+    function openSettings() {
+      settingsOpen = true;
+      settingsOverlay.hidden = false;
+      requestAnimationFrame(() => settingsOverlay.classList.add('open'));
+      settingsBtn.setAttribute('aria-expanded', 'true');
+    }
+
+    function closeSettings() {
+      settingsOpen = false;
+      settingsOverlay.classList.remove('open');
+      settingsBtn.setAttribute('aria-expanded', 'false');
+      setTimeout(() => {
+        if (!settingsOpen) settingsOverlay.hidden = true;
+      }, 280);
+    }
+
+    function svgEl(name, attrs) {
+      const node = document.createElementNS('http://www.w3.org/2000/svg', name);
+      for (const [key, value] of Object.entries(attrs)) node.setAttribute(key, value);
+      return node;
+    }
+
+    function showSector(path, full, end) {
+      if (end <= 0.15) {
+        path.setAttribute('d', '');
+        path.style.display = 'none';
+        full.style.display = 'none';
+        return;
+      }
+      if (end >= 359.85) {
+        path.style.display = 'none';
+        full.style.display = '';
+        return;
+      }
+      full.style.display = 'none';
+      path.style.display = '';
+      path.setAttribute('d', sectorPath(SECTOR_R, end));
+    }
+
+    function minorStepFor(majorStep) {
+      for (const div of [6, 5, 4, 3, 2]) {
+        if (majorStep % div === 0) return majorStep / div;
+      }
+      return 1;
+    }
+
+    function tickPlan(hours) {
+      const totalMin = Math.max(1, Math.round(hours * 60));
+      const steps = [1, 2, 5, 10, 15, 20, 30, 60, 90, 120, 180, 240, 360];
+      const majorStep = steps.find((step) => totalMin / step <= 6) || 360;
+      const minorStep = minorStepFor(majorStep);
+      return { totalMin, majorStep, minorStep };
+    }
+
+    function buildTicks() {
+      if (builtHours === dialHours) return;
+      builtHours = dialHours;
+      ticks.replaceChildren();
+      const { totalMin, majorStep, minorStep } = tickPlan(dialHours);
+      for (let min = 0; min < totalMin; min += minorStep) {
+        const deg = (min / totalMin) * 360;
+        const major = min % majorStep === 0;
+        const inner = major ? TICK_MAJOR_INNER : TICK_MINOR_INNER;
+        const outer = major ? TICK_MAJOR_OUTER : TICK_MINOR_OUTER;
+        const [x1, y1] = polar(inner, deg);
+        const [x2, y2] = polar(outer, deg);
+        ticks.appendChild(svgEl('line', {
+          x1: x1.toFixed(2),
+          y1: y1.toFixed(2),
+          x2: x2.toFixed(2),
+          y2: y2.toFixed(2),
+          stroke: dialTickStroke(),
+          'stroke-width': major ? '12' : '6',
+          'stroke-linecap': 'round',
+          opacity: major ? '1' : '0.72',
+        }));
+      }
+    }
+
+    function pointerAngle(event) {
+      const point = svg.createSVGPoint();
+      point.x = event.clientX;
+      point.y = event.clientY;
+      const mapped = point.matrixTransform(svg.getScreenCTM().inverse());
+      const dx = mapped.x - CX;
+      const dy = mapped.y - CY;
+      let deg = Math.atan2(dx, -dy) * 180 / Math.PI;
+      if (deg < 0) deg += 360;
+      return { deg, dist: Math.hypot(dx, dy) };
+    }
+
+    // Keep the hand on the peg at 12 o'clock instead of wrapping past it.
+    function approach(prev, next) {
+      let diff = next - prev;
+      if (diff > 180) diff -= 360;
+      if (diff < -180) diff += 360;
+      return Math.min(360, Math.max(0, prev + diff));
+    }
+
+    function clearEndTimer() {
+      clearTimeout(endTimer);
+      endTimer = 0;
+    }
+
+    function stopSpray() {
+      sprayToken += 1;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    }
+
+    function resetProgress() {
+      clearEndTimer();
+      running = false;
+      previewing = false;
+      finished = false;
+      elapsedBefore = 0;
+      focusByStart = false;
+      showAllUi = false;
+      stopSpray();
+    }
+
+    function complete() {
+      if (finished) return;
+      clearEndTimer();
+      elapsedBefore = targetMs();
+      running = false;
+      previewing = false;
+      finished = true;
+      focusByStart = false;
+      showAllUi = false;
+      render();
+      spray();
+      if (navigator.vibrate) navigator.vibrate([80, 40, 120, 40, 180]);
+    }
+
+    function armEndTimer() {
+      clearEndTimer();
+      const remain = Math.max(0, targetMs() - elapsedBefore);
+      const wait = remain / speed;
+      endTimer = setTimeout(() => {
+        if (running) complete();
+      }, wait);
+    }
+
+    function start(mode) {
+      if (running || targetMs() < MIN_SET_MS) return;
+      if (finished || (mode === 'preview' && elapsedBefore > 0)) {
+        elapsedBefore = 0;
+        finished = false;
+        stopSpray();
+      }
+      if (mode === 'preview') {
+        elapsedBefore = 0;
+        finished = false;
+        speed = targetMs() / PREVIEW_MS;
+        previewing = true;
+        focusByStart = false;
+      } else {
+        speed = 1;
+        previewing = false;
+        focusByStart = true;
+        showAllUi = false;
+      }
+      runStartedAt = Date.now();
+      running = true;
+      armEndTimer();
+      render();
+    }
+
+    function pause() {
+      if (!running) return;
+      elapsedBefore = Math.min(currentElapsed(), targetMs());
+      running = false;
+      previewing = false;
+      focusByStart = false;
+      clearEndTimer();
+      render();
+    }
+
+    function render() {
+      const goal = targetMs();
+      const elapsed = Math.min(currentElapsed(), goal);
+      const progressAngle = goal === 0 ? 0 : (elapsed / (dialHours * 3600000)) * 360;
+
+      if (running && elapsed >= goal) complete();
+
+      showSector(setArc, setFull, setAngle);
+      showSector(progressArc, progressFull, finished || elapsed >= goal ? setAngle : progressAngle);
+      setHand.setAttribute('transform', `rotate(${setAngle} ${CX} ${CY})`);
+      progressHand.setAttribute('transform', `rotate(${Math.min(progressAngle, setAngle)} ${CX} ${CY})`);
+
+      setTime.textContent = formatHMS(goal);
+      elapsedTime.textContent = formatHMS(elapsed);
+      remainTime.textContent = formatHMS(Math.max(0, goal - elapsed));
+      remainBox.classList.toggle('done', finished);
+      dialNow.textContent = `这一圈是 ${formatHours(dialHours)} 小时`;
+      stage.classList.toggle('done', finished);
+      stage.classList.toggle('is-running', running);
+
+      const focusMode = running && focusByStart;
+      document.body.classList.toggle('focus-mode', focusMode);
+      document.body.classList.toggle('show-all', showAllUi);
+      expandBtn.hidden = !focusMode;
+      expandBtn.textContent = showAllUi ? '仅表盘' : '全显示';
+      expandBtn.setAttribute('aria-expanded', showAllUi ? 'true' : 'false');
+
+      svg.setAttribute('aria-label', `拨定 ${formatHMS(goal)}，已走 ${formatHMS(elapsed)}`);
+
+      const locked = running;
+      chips.forEach((chip) => {
+        const on = Number(chip.dataset.hours) === dialHours;
+        chip.classList.toggle('on', on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+        chip.disabled = locked;
+      });
+      hoursInput.disabled = locked;
+      previewBtn.classList.toggle('on', previewing);
+      previewBtn.disabled = locked || goal < MIN_SET_MS;
+      startBtn.disabled = locked || goal < MIN_SET_MS;
+      pauseBtn.disabled = !running;
+      startBtn.textContent = finished ? '再来一次' : elapsedBefore > 0 && !running ? '继续' : '开始';
+
+      if (dragging) statusEl.textContent = `${Math.round(setAngle)}° · ${formatLoose(goal)}`;
+      else if (running && previewing) statusEl.textContent = '预览加速中，大约 10 秒走完，不是真实时长';
+      else if (running) statusEl.textContent = focusByStart && !showAllUi ? '专注模式 · 右上角可全显示' : '覆盖色指针按真实时间走动';
+      else if (finished) statusEl.textContent = '两针重合了';
+      else if (elapsedBefore > 0) statusEl.textContent = '已暂停';
+      else statusEl.textContent = '拖动拨针圆点，圆环上按住也可以';
+
+      document.title = finished
+        ? '时间到'
+        : running
+          ? formatHMS(Math.max(0, goal - elapsed))
+          : '计时';
+    }
+
+    function loop() {
+      if (running || dragging) render();
+      requestAnimationFrame(loop);
+    }
+
+    function onDown(event) {
+      if (running) return;
+      const info = pointerAngle(event);
+      if (info.dist < 80 || info.dist > 300) return;
+      dragging = true;
+      document.body.classList.add('dragging');
+      if (elapsedBefore > 0 || finished) resetProgress();
+      dragAngle = info.deg;
+      setAngle = dragAngle;
+      try { svg.setPointerCapture(event.pointerId); } catch (err) { /* synthetic events */ }
+      render();
+    }
+
+    function onMove(event) {
+      if (!dragging) return;
+      const info = pointerAngle(event);
+      if (info.dist < 48) return;
+      dragAngle = approach(dragAngle, info.deg);
+      setAngle = dragAngle;
+      render();
+    }
+
+    function endDrag(event) {
+      if (!dragging) return;
+      dragging = false;
+      document.body.classList.remove('dragging');
+      try {
+        if (svg.hasPointerCapture(event.pointerId)) svg.releasePointerCapture(event.pointerId);
+      } catch (err) { /* synthetic events */ }
+      render();
+    }
+
+    function setDialHours(hours) {
+      const next = Math.min(24, Math.max(0.5, hours));
+      if (next === dialHours) return;
+      dialHours = next;
+      resetProgress();
+      buildTicks();
+      render();
+    }
+
+    function spray() {
+      const token = ++sprayToken;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.floor(window.innerWidth * dpr);
+      canvas.height = Math.floor(window.innerHeight * dpr);
+      canvas.style.width = `${window.innerWidth}px`;
+      canvas.style.height = `${window.innerHeight}px`;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+
+      const rect = svg.getBoundingClientRect();
+      const originX = rect.left + rect.width / 2;
+      const originY = rect.top + rect.height / 2;
+      const p = PALETTES[paletteIndex];
+      const colors = [
+        rgbCss(p.set),
+        rgbCss(p.progress),
+        'var(--tint)',
+        '#ff2d55',
+        uiTheme === 'dark' ? '#ffffff' : '#1c1c1e',
+        '#5856d6',
+      ].map((c) => (c.startsWith('var(') ? '#007aff' : c));
+      const pieces = [];
+      for (let i = 0; i < 110; i += 1) {
+        const angle = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.45;
+        const velocity = 8 + Math.random() * 11;
+        pieces.push({
+          x: originX + (Math.random() - 0.5) * 30,
+          y: originY + (Math.random() - 0.5) * 16,
+          vx: Math.cos(angle) * velocity,
+          vy: Math.sin(angle) * velocity,
+          w: 5 + Math.random() * 5,
+          h: 12 + Math.random() * 16,
+          rot: Math.random() * Math.PI,
+          vr: (Math.random() - 0.5) * 0.35,
+          color: colors[i % colors.length],
+          life: 1,
+          decay: 0.004 + Math.random() * 0.004,
+        });
+      }
+
+      function frame() {
+        if (token !== sprayToken) return;
+        ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+        let alive = false;
+        for (const piece of pieces) {
+          piece.life -= piece.decay;
+          if (piece.life <= 0) continue;
+          alive = true;
+          piece.vy += 0.16;
+          piece.vx *= 0.992;
+          piece.vy *= 0.992;
+          piece.x += piece.vx;
+          piece.y += piece.vy;
+          piece.rot += piece.vr;
+          ctx.save();
+          ctx.translate(piece.x, piece.y);
+          ctx.rotate(piece.rot);
+          ctx.globalAlpha = Math.max(piece.life, 0);
+          ctx.fillStyle = piece.color;
+          ctx.fillRect(-piece.w / 2, -piece.h / 2, piece.w, piece.h);
+          ctx.restore();
+        }
+        if (alive) requestAnimationFrame(frame);
+        else ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+      }
+
+      requestAnimationFrame(frame);
+    }
+
+    svg.addEventListener('pointerdown', onDown);
+    svg.addEventListener('pointermove', onMove);
+    svg.addEventListener('pointerup', endDrag);
+    svg.addEventListener('pointercancel', endDrag);
+
+    chips.forEach((chip) => {
+      chip.addEventListener('click', () => {
+        if (running) return;
+        const hours = Number(chip.dataset.hours);
+        hoursInput.value = String(hours);
+        setDialHours(hours);
+      });
+    });
+
+    hoursInput.addEventListener('change', () => {
+      let value = Number(hoursInput.value);
+      if (!Number.isFinite(value)) value = dialHours;
+      value = Math.min(24, Math.max(0.5, Math.round(value * 2) / 2));
+      hoursInput.value = String(value);
+      setDialHours(value);
+    });
+
+    startBtn.addEventListener('click', () => start('real'));
+    pauseBtn.addEventListener('click', pause);
+    resetBtn.addEventListener('click', () => {
+      resetProgress();
+      render();
+    });
+    previewBtn.addEventListener('click', () => start('preview'));
+
+    expandBtn.addEventListener('click', () => {
+      showAllUi = !showAllUi;
+      render();
+    });
+
+    settingsBtn.addEventListener('click', () => {
+      if (settingsOpen) closeSettings();
+      else openSettings();
+    });
+    settingsClose.addEventListener('click', closeSettings);
+    settingsOverlay.addEventListener('click', (event) => {
+      if (event.target === settingsOverlay) closeSettings();
+    });
+    settingsOverlay.querySelector('.settings-sheet').addEventListener('click', (event) => {
+      event.stopPropagation();
+    });
+
+    themeOpts.forEach((btn) => {
+      btn.addEventListener('click', () => {
+        uiTheme = btn.dataset.theme;
+        applyAppearance();
+        builtHours = null;
+        buildTicks();
+      });
+    });
+
+    document.addEventListener('keydown', (event) => {
+      if (event.code === 'Escape' && settingsOpen) {
+        event.preventDefault();
+        closeSettings();
+        return;
+      }
+      if (event.target === hoursInput) return;
+      if (event.target instanceof HTMLButtonElement && event.code === 'Space') return;
+      if (event.code === 'Space') {
+        event.preventDefault();
+        if (running) pause();
+        else start('real');
+      } else if (event.code === 'ArrowLeft' || event.code === 'ArrowRight') {
+        if (running) return;
+        event.preventDefault();
+        const step = event.shiftKey ? 15 : 1;
+        const dir = event.code === 'ArrowRight' ? 1 : -1;
+        if (elapsedBefore > 0 || finished) resetProgress();
+        setAngle = Math.min(360, Math.max(0, setAngle + dir * step));
+        render();
+      }
+    });
+
+    loadAppearancePrefs();
+    buildPaletteOptions();
+    applyAppearance();
+    buildTicks();
+    render();
+    requestAnimationFrame(loop);
+  </script>
+</body>
+</html>
